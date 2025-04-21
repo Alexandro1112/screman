@@ -6,15 +6,12 @@ from .cgdisplay import _DisplayCallbackDelegate, kCGErrorTypes
 class DisplayCallbackDelegate(_DisplayCallbackDelegate):
     def __init__(self, display=Quartz.CGMainDisplayID()):
         super().__init__(display)
-        for m in self.__dir__():
-            if m.startswith('_') and not m.endswith('__'):
-                try:
-                    delattr(self, m)
-                except AttributeError:
-                    continue
 
     def hideCursor(self):
         return self._hideCursor()
+
+    def pressKey(self, key):
+        return self._pressKey(key)
 
     def moveTo(self, x, y):
         return self._moveTo(x, y)
@@ -55,12 +52,17 @@ class DisplayCallbackDelegate(_DisplayCallbackDelegate):
     def modeRetain(self):
         return self._modeRetain()
 
-    def isDisplay(self, n):
-        return self._isDisplay(n)
+    def isDisplay(self):
+        return self._isDisplay()
 
     def bestDisplayMode(self):
         return self._bestDisplayMode()
 
+    def switchTrueTone(self):
+        return self._switchTrueTone()
+
+    def getWindowsOnDisplay(self, index):
+        return self._getWindowsOnDisplay(index)
 
 del _DisplayCallbackDelegate
 __all__ = [DisplayCallbackDelegate, ]

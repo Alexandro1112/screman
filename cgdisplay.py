@@ -3,42 +3,10 @@ import Quartz # noqa F401
 import ctypes
 import abc
 import objc
-
-
-# create exceptions and error classes
-
-
-class QErrorNoneAvailable(NotImplementedError):
-    pass
-
-
-class QErrorWrongArgument(ValueError):
-    pass
-
-
-class kCGErrorTypes(IOError):  # noqa
-    """
-        Universal type for associations error codes added.
-       .. versionadded:: 0.0.1
-    """
-    def __init__(self, n):
-        pass
-
-
-class Helpers:
-    @staticmethod
-    def err_to_exception(err):
-        query_exc = {
-             0: '_kCGErrorSuccess',
-             1000: '_kCGErrorFailure',
-             1001: '_kCGErrorIllegalArgument',
-             1011: '_kCGErrorNoneAvailable',
-             1970170734: '_kDisplayVendorIDUnknown',
-             1007: '_kCGErrorRangeCheck'
-
-
-        }
-        return query_exc[err]
+from typing_extensions import Iterable
+from .maping import c_keycode, keycode
+from .types import kCGErrorTypes, QErrorNoneAvailable
+from string import ascii_lowercase, digits, punctuation
 
 
 class CGDisplayDelegate:
@@ -46,7 +14,7 @@ class CGDisplayDelegate:
         self.display = display or Quartz.CGMainDisplayID()  # define main display reference in abc class.
 
         self._mp_display = None
-        self.status: kCGErrorTypes = kCGErrorTypes(0)
+        self.status: kCGErrorTypes = kCGErrorTypes(None)
 
     def __abs__(self):
         raise NotImplementedError
@@ -56,6 +24,10 @@ class CGDisplayDelegate:
 
     @abc.abstractmethod
     def _hideCursor(self):
+        pass
+
+    @abc.abstractmethod
+    def _pressKey(self, key):
         pass
 
     @abc.abstractmethod
@@ -99,6 +71,10 @@ class CGDisplayDelegate:
         pass
 
     @abc.abstractmethod
+    def _getWindowsOnDisplay(self, index):
+        pass
+
+    @abc.abstractmethod
     def _getGamma(self):
         pass
 
@@ -111,11 +87,15 @@ class CGDisplayDelegate:
         pass
 
     @abc.abstractmethod
-    def _isDisplay(self, n):
+    def _isDisplay(self):
         pass
 
     @abc.abstractmethod
     def _bestDisplayMode(self):
+        pass
+
+    @abc.abstractmethod
+    def _switchTrueTone(self):
         pass
 
 
@@ -134,7 +114,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
     _kCGErrorNoneAvailable: kCGErrorTypes = 1011
     _kDisplayVendorIDUnknown: kCGErrorTypes = 1970170734  # defined in IOGraphicsTypes.h
     _kCGErrorRangeCheck: kCGErrorTypes = 1007
-    _kDisplayModeNativeFlag = 33554432  # defined in bridge.bridgesupport and in IOGraphicsTypes.h
+    _kDisplayModeNativeFlag = 33554432  # defined in IOGraphicsTypes.h
 
     def __int__(self):
         return self.display
@@ -145,8 +125,83 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
     def __lt__(self, other):
         return self.display <= 0
 
+    def __is_exist(self):
+        return self._isDisplay()
+
     def __repr__(self):
         return '<' + _DisplayCallbackDelegate.__name__.__repr__() + f' with display at {repr(self.display)} index>'
+
+    def _load(self):
+        objc.loadBundle(
+            'MonitorPanel',
+            bundle_path=objc.pathForFramework('/System/Library/PrivateFrameworks/MonitorPanel.framework'),
+            module_globals=globals(),
+        )
+        objc.loadBundle(
+            'CoreBrightness',
+            bundle_path=objc.pathForFramework('/System/Library/PrivateFrameworks/CoreBrightness.framework'),
+            module_globals=globals(),
+        )
+
+        return globals()
+
+    def _pressKey(self, key: Iterable | str) -> _kCGErrorSuccess:
+        """Synthesizes a low-level keyboard event on the local machine.
+            ..Mac Catalyst 13.1–13.1
+            * Deprecated
+            ..versionadded: 0.0.7
+            """
+        key = key.capitalize()  # if key passed in lower register
+
+        _hexKey = (keycode.get(key if key.startswith('kVK_ANSI') else 'kVK_ANSI_' + key, None)
+            or c_keycode.get(key if key.startswith('kVK_') else 'kVK_' + key, None)
+        )  # if passed name of key which isn't startswith from kVK_ANSI or kVK
+
+        _virtualKey = Quartz.kCGKeyboardEventKeycode if (key.lower() in
+                    ' '.join(ascii_lowercase + digits + punctuation).split()) else Quartz.kCGKeyboardEventKeyboardType
+
+        if _hexKey:
+            self.status = Quartz.CGPostKeyboardEvent(
+                _virtualKey,
+                _hexKey,
+                True
+            )
+            if self.status == self._kCGErrorSuccess:
+                return self._kCGErrorSuccess
+            return self.status
+        return self._kCGErrorIllegalArgument
+
+    def _getWindowsOnDisplay(self, index):
+        """
+        Generates and returns information about the selected windows in the current user session.
+            ..Mac Catalyst 13.1+
+            ..macOS 10.5+
+            ..versionadded: 0.0.7
+        """
+        class SelectedWindow:
+            """
+             A class representing a selected windows in the current user session.
+            This class encapsulates the information of a window retrieved from the macOS window session.
+            """
+            def __repr__(self):
+                return (f'<{SelectedWindow.__name__} with index {index} and with constants' +
+                        ';\n\t'.join(self.nsdict) + ';>')
+
+            def __init__(self, nsdict):
+                self.nsdict = nsdict
+                for key, value in nsdict.items():
+                    setattr(self, key, value)  # set the available keys of data as
+                                               # attributes to reverted SelectedWindow class
+
+            def __getattr__(self, attr):
+                del self.nsdict
+                # finally delete nsdict
+
+        options = (Quartz.kCGWindowListOptionIncludingWindow & Quartz.kCGWindowListExcludeDesktopElements)
+        _openedWindows = Quartz.CGWindowListCopyWindowInfo(
+            options, Quartz.kCGNullWindowID
+        )
+        return SelectedWindow(_openedWindows[index])
 
     def _hideCursor(self) -> _kCGErrorSuccess:
         """ Hides the mouse cursor, and increments the hide cursor count.
@@ -221,8 +276,6 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             self.display,
             1,
             *tables()
-
-
         )
         time.sleep(0.02)
         # make delay between executing function, it needs if function is called for a continuous times.
@@ -230,17 +283,6 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         if self.status == self._kCGErrorSuccess:
             return self._kCGErrorSuccess
         return self.status
-
-    def _load(self):
-        _globals = {}  # define globals dict before loading, it requires if framework fails to load.
-        objc.loadBundle(
-            'MonitorPanel',
-            bundle_path=objc.pathForFramework('/System/Library/PrivateFrameworks/MonitorPanel.framework'),
-            module_globals=globals(),
-        )
-        if _globals != globals():
-            return globals()
-        return _globals  # pragma: no cover
 
     def _setPalette(self) -> _kCGErrorSuccess:
         """Sets the palette for a display.
@@ -354,7 +396,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             .. macOS 10.0+
             .. versionadded:: 0.0.2
         """
-        self.status, *disp_trans = Quartz.CGGetDisplayTransferByFormula(
+        self.status, disp_trans = Quartz.CGGetDisplayTransferByFormula(
             self.display,
             None,
             None,
@@ -379,7 +421,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             ..macOS 10.0+
             .. versionadded:: 0.0.3
         """
-        if all(color == red for color in [blue, green]):
+        if red == blue == green:
             return self._kCGErrorIllegalArgument
             # if all gamuts are equal, it means that the RGB gamma of the display will not change.
 
@@ -407,17 +449,17 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
 
         display_modes = Quartz.CGDisplayCopyAllDisplayModes(self.display, None)
 
-        for md in range(Quartz.CFArrayGetCount(display_modes)):
-            cur_mode = Quartz.CFArrayGetValueAtIndex(display_modes, md)
+        for modes in range(Quartz.CFArrayGetCount(display_modes)):
+            cur_mode = Quartz.CFArrayGetValueAtIndex(display_modes, modes)
 
             if Quartz.CGDisplayModeGetIOFlags(cur_mode) & self._kDisplayModeNativeFlag:
                 io_port = Quartz.CGDisplayModeGetIOFlags(cur_mode)
                 return Quartz.CGDisplayModeRetain(io_port)
             return None
 
-    def _isDisplay(self, n) -> _kCGErrorSuccess:
-        _listDisplay = Quartz.CGGetActiveDisplayList(30, None, None)
-        return _listDisplay
+    def _isDisplay(self) -> _kCGErrorSuccess:
+        _, _listDisplays, _ = Quartz.CGGetActiveDisplayList(30, None, None)
+        return self.display in _listDisplays
 
     def _bestDisplayMode(self) -> _kCGErrorSuccess:
         """
@@ -428,10 +470,25 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         mode, self.status = Quartz.CGDisplayBestModeForParametersAndRefreshRate(
             Quartz.CGMainDisplayID(),
             0,
-            Quartz.CGDisplayBitsPerPixel(Quartz.CGMainDisplayID()),
-            *Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size,
+            Quartz.CGDisplayBitsPerPixel(self.display),
+            *Quartz.CGDisplayBounds(self.display).size,
             None
         )
         if self.status == self._kCGErrorSuccess:
             return mode
         return self.status
+
+    def _switchTrueTone(self)-> _kCGErrorSuccess:
+        """
+        switch display TrueTone mode to other status.
+        ..versionadded:: 0.0.5
+        """
+        _isLoadCb = self._load()
+        if _isLoadCb:
+            client = _isLoadCb['CBTrueToneClient'].alloc().init()
+            old_status = client.enabled()
+            if client.available() and client.supported():
+                self.status = client.setEnabled_((not client.enabled()))
+                new_status = client.enabled()
+                if new_status != old_status:
+                    return self._kCGErrorSuccess
