@@ -428,8 +428,8 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         mode, self.status = Quartz.CGDisplayBestModeForParametersAndRefreshRate(
             Quartz.CGMainDisplayID(),
             0,
-            Quartz.CGDisplayBitsPerPixel(Quartz.CGMainDisplayID()),
-            *Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size,
+            Quartz.CGDisplayBitsPerPixel(self.display),
+            *Quartz.CGDisplayBounds(self.display).size,
             None
         )
         if self.status == self._kCGErrorSuccess:
