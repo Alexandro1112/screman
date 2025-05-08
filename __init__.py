@@ -61,8 +61,11 @@ class DisplayCallbackDelegate(_DisplayCallbackDelegate):
     def switchTrueTone(self):
         return self._switchTrueTone()
 
-    def getWindowsOnDisplay(self, index):
+    def getWindowsOnDisplay(self, index=None):
         return self._getWindowsOnDisplay(index)
+
+    def displayProperties(self):
+        return self._displayProperties()
 
 del _DisplayCallbackDelegate
 __all__ = [DisplayCallbackDelegate, ]

@@ -1,5 +1,5 @@
 import time
-import Quartz # noqa F401
+import Quartz.CoreGraphics
 import ctypes
 import abc
 import objc
@@ -98,6 +98,10 @@ class CGDisplayDelegate:
     def _switchTrueTone(self):
         pass
 
+    @abc.abstractmethod
+    def _displayProperties(self):
+        pass
+
 
 class _DisplayCallbackDelegate(CGDisplayDelegate):
 
@@ -120,16 +124,26 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         return self.display
 
     def __le__(self, other):
-        return self.display >= 0
+        return self.display <= 0
 
     def __lt__(self, other):
-        return self.display <= 0
+        return self.display >= 0
 
     def __is_exist(self):
         return self._isDisplay()
 
     def __repr__(self):
         return '<' + _DisplayCallbackDelegate.__name__.__repr__() + f' with display at {repr(self.display)} index>'
+
+    def _displayProperties(self):
+        disp_properties = {}
+        _isLoadMp = self._load()
+        if _isLoadMp:
+            display = globals()['MPDisplay'].alloc().initWithCGSDisplayID_(self.display)
+            for i in dir(display):
+                if i.startswith('is') and not i.endswith('_'):
+                    disp_properties[i] = eval(f'display.{i}()')
+            return disp_properties
 
     def _load(self):
         objc.loadBundle(
@@ -171,7 +185,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             return self.status
         return self._kCGErrorIllegalArgument
 
-    def _getWindowsOnDisplay(self, index):
+    def _getWindowsOnDisplay(self, index=None):
         """
         Generates and returns information about the selected windows in the current user session.
             ..Mac Catalyst 13.1+
@@ -192,16 +206,19 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 for key, value in nsdict.items():
                     setattr(self, key, value)  # set the available keys of data as
                                                # attributes to reverted SelectedWindow class
-
             def __getattr__(self, attr):
-                del self.nsdict
-                # finally delete nsdict
+                pass
+
+            def __getitem__(self, _index):
+                return self.nsdict[_index]
 
         options = (Quartz.kCGWindowListOptionIncludingWindow & Quartz.kCGWindowListExcludeDesktopElements)
-        _openedWindows = Quartz.CGWindowListCopyWindowInfo(
+        self._openedWindows = Quartz.CGWindowListCopyWindowInfo(
             options, Quartz.kCGNullWindowID
         )
-        return SelectedWindow(_openedWindows[index])
+        if index is None:
+            return self._openedWindows
+        return SelectedWindow(self._openedWindows[index])
 
     def _hideCursor(self) -> _kCGErrorSuccess:
         """ Hides the mouse cursor, and increments the hide cursor count.
@@ -223,12 +240,13 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             ..versionupdate:: 0.0.3
         """
         w, h = Quartz.CGDisplayBounds(self.display).size
+        _globalPoint = Quartz.CGPointMake(x, y)
+
         if x >= w or y >= h:
             return self._kCGErrorIllegalArgument
-
         self.status = Quartz.CGDisplayMoveCursorToPoint(
             self.display,
-            Quartz.CGRect(x, y)
+            _globalPoint
         )
         if self.status == self._kCGErrorSuccess:
             return
@@ -238,12 +256,13 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         """ Switches a display to a different mode.
         In an update 0.0.3 I prefer use a MPDisplay for switches modes, because it sets the modes for a long time.
             .. versionadded:: 0.0.1
-            .. versionupdate:: 0.0.3"""
+            .. versionupdate:: 0.0.3
+            """
         _isLoadMp = self._load()
         if _isLoadMp:
             display = _isLoadMp['MPDisplay'].alloc().initWithCGSDisplayID_(self.display)
             modes = display.allModes()
-            if modeIndex <= 0 or modeIndex >= len(modes):
+            if modeIndex <= 0 or modeIndex > len(modes):
                 return self._kCGErrorIllegalArgument
 
             _mode = modes[modeIndex]
@@ -288,18 +307,17 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         """Sets the palette for a display.
             .. versionadded:: 0.0.1
         """
-        if Quartz.CGDisplayCanSetPalette(self.display):
-            self.status = Quartz.CGDisplaySetPalette(
-                self.display,
-                None
-            )
+        self.status = Quartz.CGDisplaySetPalette(
+            self.display,
+            None
+        )
 
-            if self.status == self._kCGErrorNoneAvailable:
-                raise QErrorNoneAvailable(
-                    f'Sorry, {self._setPalette.__name__}(:_:) currently not supported by this OS version.')
+        if self.status == self._kCGErrorNoneAvailable or Quartz.CGDisplayCanSetPalette(self.display):
+            raise QErrorNoneAvailable(
+                f'Sorry, {self._setPalette.__name__}(:_:) currently not supported by this OS version.')
 
-            elif self.status == self._kCGErrorSuccess:
-                return self._kCGErrorSuccess
+        elif self.status == self._kCGErrorSuccess:
+            return self._kCGErrorSuccess
         return self._kCGErrorNoneAvailable
 
     def _setRotation(self, angle) -> _kCGErrorSuccess:
@@ -427,9 +445,9 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
 
         self.status = Quartz.CGSetDisplayTransferByFormula(
             self.display,
-            0.0, 1.0, red,
-            0.0, 1.0, green,
-            0.0, 1.0, blue
+            0.1, 1.0, red,
+            0.1, 1.0, green,
+            0.1, 1.0, blue
         )
         time.sleep(0.02)
         # make delay between executing function, it needs if function is called for a continuous times.
@@ -469,9 +487,9 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         """
         mode, self.status = Quartz.CGDisplayBestModeForParametersAndRefreshRate(
             Quartz.CGMainDisplayID(),
-            0,
             Quartz.CGDisplayBitsPerPixel(self.display),
             *Quartz.CGDisplayBounds(self.display).size,
+            0,
             None
         )
         if self.status == self._kCGErrorSuccess:
