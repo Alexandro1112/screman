@@ -4,7 +4,7 @@ import ctypes
 import abc
 import objc
 from typing_extensions import Iterable
-from .maping import c_keycode, keycode
+from .mapping import c_keycode, keycode
 from .types import kCGErrorTypes, QErrorNoneAvailable
 from string import ascii_lowercase, digits, punctuation
 
