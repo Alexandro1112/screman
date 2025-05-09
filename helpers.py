@@ -13,7 +13,7 @@ def err_to_exception(err):
 
 
     }
-    return query_exc[err]
+    return query_exc.get(err, query_exc[0])
 
 
 
