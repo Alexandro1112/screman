@@ -1,5 +1,5 @@
 # create exceptions and error classes
-
+from .helpers import err_to_exception
 
 class QErrorNoneAvailable(NotImplementedError):
     pass
@@ -15,4 +15,8 @@ class kCGErrorTypes(IOError):  # noqa
        .. versionadded:: 0.0.1
     """
     def __init__(self, n):
+        self.n = n
         pass
+
+    def err(self):
+        return err_to_exception(self.n)
