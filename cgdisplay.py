@@ -3,93 +3,18 @@ import Quartz.CoreGraphics
 import ctypes
 import abc
 import objc
-from typing_extensions import Iterable, Dict, SupportsInt
+from typing_extensions import Iterable
 from .maping import c_keycode, keycode
 from .types import kCGErrorTypes, QErrorNoneAvailable
 from string import ascii_lowercase, digits, punctuation
 
 
 class CGDisplayDelegate:
-    """
-            ...CGDisplayDelegate - Abstract base class for managing and interacting with display
-           properties and behaviors on macOS using the Quartz framework.
-           This class provides a structure for subclasses to implement various display-related functionalities, including
-           cursor management, key presses, display mode settings, brightness adjustments, and more. The methods defined in this
-           class are abstract and must be overridden in any subclass to provide specific implementations.
-
-       Attributes:
-           display (Quartz.CGMainDisplayID): Reference to the main display ID. If no display ID is provided during
-                                               initialization, it defaults to the main display.
-           status (kCGErrorTypes): Status variable for tracking errors related to display operations.
-
-       Methods:
-            _hideCursor(): Abstract method to hide the cursor on the display. Must be implemented in subclasses.
-
-           _pressKey(key): Abstract method to simulate a key press on the display.
-            Must be implemented in subclasses.
-
-             _moveTo(x, y): Abstract method to move the cursor to specified coordinates on the display.
-           Must be implemented in subclasses.
-
-           ... _setDisplayMode(modeIndex): Abstract method to set the display mode based on the provided index.
-           Must be implemented in subclasses.
-
-             _setTransfer(): Abstract method to set the color transfer function for the display.
-           Must be implemented in subclasses.
-
-           _setPalette(): Abstract method to set the color palette for the display. Must be implemented in subclasses.
-
-           _setRotation(angle): Abstract method to rotate the display by a specified angle.
-            Must be implemented in subclasses.
-
-           _defaultMode(): Abstract method to get the display default mode.
-            Must be implemented in subclasses.
-
-           _setDisplayBrightness(value): Abstract method to adjust the brightness of the display.
-            Must be implemented in subclasses.
-
-           _displayRotation(): Abstract method to retrieve the current rotation of the display.
-           Must be implemented in subclasses.
-
-           _vendorNumber(): Abstract method to retrieve the vendor number of the display.
-           Must be implemented in subclasses.
-
-           _setMirror(): Abstract method to enable or disable display mirroring.
-           Must be implemented in subclasses.
-
-           _getWindowsOnDisplay(index): Abstract method to retrieve windows currently displayed on the specified index.
-            Must be implemented in subclasses.
-
-           _getGamma(): Abstract method to get the current gamma settings of the display.
-           Must be implemented in subclasses.
-
-           _setGamma(red, blue, green): Abstract method to set the gamma values for red, blue, and green channels.
-            Must be implemented in subclasses.
-
-           _modeRetain(): Abstract method to retain the current mode settings of the display.
-           Must be implemented in subclasses.
-
-           _isDisplay(): Abstract method to check if an object is a valid display.
-            Must be implemented in subclasses.
-
-           _bestDisplayMode(): Abstract method to determine and return the best available display mode.
-            Must be implemented in subclasses.
-
-           _switchTrueTone(): Abstract method to enable or disable True Tone functionality on compatible displays.
-            Must be implemented in subclasses.
-
-           _displayProperties(): Abstract method to retrieve properties of the display,
-           as supported display function. Must be implemented in subclasses.
-
-       """
     def __init__(self, display: Quartz.CGMainDisplayID() = 0) -> None:
         self.display = display or Quartz.CGMainDisplayID()  # define main display reference in abc class.
+
         self._mp_display = None
         self.status: kCGErrorTypes = kCGErrorTypes(None)
-
-        if not self._isDisplay():
-            raise IndexError(f'Display {self.display} is not a valid display ID.')
-
 
     def __abs__(self):
         raise NotImplementedError
@@ -184,17 +109,16 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         ... DisplayCallbackDelegate can interact with
             display setting between external and internal displays.
             Inherit from CGDisplayDelegate, class facilitates interaction with display settings.
-            Don't run something function which can change system setting in infinite loops. It can crush your device.
 
     """
 
-    _kCGErrorSuccess: kCGErrorTypes | SupportsInt = 0
-    _kCGErrorFailure: kCGErrorTypes | SupportsInt = 1000
-    _kCGErrorIllegalArgument: kCGErrorTypes | SupportsInt = 1001
-    _kCGErrorNoneAvailable: kCGErrorTypes | SupportsInt= 1011
-    _kDisplayVendorIDUnknown: kCGErrorTypes | SupportsInt = 1970170734  # defined in IOGraphicsTypes.h
-    _kCGErrorRangeCheck: kCGErrorTypes | SupportsInt = 1007
-    _kDisplayModeNativeFlag: kCGErrorTypes | SupportsInt = 33554432  # defined in IOGraphicsTypes.h
+    _kCGErrorSuccess: kCGErrorTypes = 0
+    _kCGErrorFailure: kCGErrorTypes = 1000
+    _kCGErrorIllegalArgument: kCGErrorTypes = 1001
+    _kCGErrorNoneAvailable: kCGErrorTypes = 1011
+    _kDisplayVendorIDUnknown: kCGErrorTypes = 1970170734  # defined in IOGraphicsTypes.h
+    _kCGErrorRangeCheck: kCGErrorTypes = 1007
+    _kDisplayModeNativeFlag = 33554432  # defined in IOGraphicsTypes.h
 
     def __int__(self):
         return self.display
@@ -211,14 +135,14 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
     def __repr__(self):
         return '<' + _DisplayCallbackDelegate.__name__.__repr__() + f' with display at {repr(self.display)} index>'
 
-    def _displayProperties(self) -> Dict:
+    def _displayProperties(self):
         disp_properties = {}
         _isLoadMp = self._load()
         if _isLoadMp:
             display = globals()['MPDisplay'].alloc().initWithCGSDisplayID_(self.display)
-            for attrs in dir(display):
-                if attrs.startswith('is') and not attrs.endswith('_'):
-                    disp_properties[attrs] = eval(f'display.{attrs}()')
+            for i in dir(display):
+                if i.startswith('is') and not i.endswith('_'):
+                    disp_properties[i] = eval(f'display.{i}()')
             return disp_properties
 
     def _load(self):
@@ -257,9 +181,9 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 True
             )
             if self.status == self._kCGErrorSuccess:
-                return kCGErrorTypes(self._kCGErrorSuccess)
-            return kCGErrorTypes(self.status)
-        return kCGErrorTypes(self._kCGErrorIllegalArgument)
+                return self._kCGErrorSuccess
+            return self.status
+        return self._kCGErrorIllegalArgument
 
     def _getWindowsOnDisplay(self, index=None):
         """
@@ -274,7 +198,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             This class encapsulates the information of a window retrieved from the macOS window session.
             """
             def __repr__(self):
-                return (f'<{SelectedWindow.__name__} with index {index} and with constants ' +
+                return (f'<{SelectedWindow.__name__} with index {index} and with constants' +
                         ';\n\t'.join(self.nsdict) + ';>')
 
             def __init__(self, nsdict):
@@ -305,7 +229,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         time.sleep(0.05)
         # make delay between executing function, it needs if function is called for a continuous times.
 
-        return kCGErrorTypes(self.status)
+        return self.status
 
     def _moveTo(self, x, y) -> _kCGErrorSuccess:
         """ Moves the mouse cursor to a specified point
@@ -325,8 +249,8 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             _globalPoint
         )
         if self.status == self._kCGErrorSuccess:
-            return kCGErrorTypes(self._kCGErrorSuccess)
-        return kCGErrorTypes(self.status)
+            return
+        return self.status
 
     def _setDisplayMode(self, modeIndex) -> _kCGErrorSuccess:
         """ Switches a display to a different mode.
@@ -345,8 +269,8 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             self.status = display.setMode_(_mode)
 
             if self.status == self._kCGErrorSuccess:
-                return kCGErrorTypes(self._kCGErrorSuccess)
-            return kCGErrorTypes(self.status)
+                return self._kCGErrorSuccess
+            return self.status
 
     def _setTransfer(self) -> _kCGErrorSuccess:
         """ Sets the byte values in the 8-bit RGB gamma tables for a display.
@@ -376,8 +300,8 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         # make delay between executing function, it needs if function is called for a continuous times.
 
         if self.status == self._kCGErrorSuccess:
-            return kCGErrorTypes(self._kCGErrorSuccess)
-        return kCGErrorTypes(self.status)
+            return self._kCGErrorSuccess
+        return self.status
 
     def _setPalette(self) -> _kCGErrorSuccess:
         """Sets the palette for a display.
@@ -393,8 +317,8 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 f'Sorry, {self._setPalette.__name__}(:_:) currently not supported by this OS version.')
 
         elif self.status == self._kCGErrorSuccess:
-            return kCGErrorTypes(self._kCGErrorSuccess)
-        return kCGErrorTypes(self._kCGErrorNoneAvailable)
+            return self._kCGErrorSuccess
+        return self._kCGErrorNoneAvailable
 
     def _setRotation(self, angle) -> _kCGErrorSuccess:
         """Rotate display at determine angle multiple to 90.
@@ -408,10 +332,10 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             if _isCan:
                 self.status = self._mp_display.setOrientation_(angle)
                 if self.status == self._kCGErrorSuccess:
-                    return kCGErrorTypes(self._kCGErrorSuccess)
+                    return self._kCGErrorSuccess
                 elif not angle % 90 == 0:
-                    return kCGErrorTypes(self._kCGErrorIllegalArgument)
-                return kCGErrorTypes(self.status)  # real unknown status
+                    return self._kCGErrorIllegalArgument
+                return self.status  # real unknown status
             return None
         raise QErrorNoneAvailable(
             'MonitorPanel framework failed to loading'
@@ -426,7 +350,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             self._mp_display = _isLoadMp['MPDisplay'].alloc().initWithCGSDisplayID_(self.display)
             if self._mp_display.defaultMode():
                 return self._mp_display.defaultMode()
-            return kCGErrorTypes(self._kCGErrorNoneAvailable)
+            return self._kCGErrorNoneAvailable
 
     def _setDisplayBrightness(self, value) -> _kCGErrorSuccess:
         """regulating brightness of screen to value
@@ -436,9 +360,9 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         try:
             self.status = _controller.setBrightnessOnAllDisplays_(value)
         except ValueError:
-            return kCGErrorTypes(self._kCGErrorIllegalArgument)
+            return self._kCGErrorIllegalArgument
         finally:
-            return kCGErrorTypes(self._kCGErrorSuccess)
+            return self._kCGErrorSuccess
 
     def _displayRotation(self) -> _kCGErrorSuccess:
         """
@@ -463,7 +387,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             return None
         elif _v_number == self._kDisplayVendorIDUnknown:  # If I/O Kit cannot identify the monitor
             # kDisplayVendorIDUnknown is returned
-            return kCGErrorTypes(self._kDisplayVendorIDUnknown)
+            return self._kDisplayVendorIDUnknown
         return _v_number
 
     def _setMirror(self) -> _kCGErrorSuccess:
@@ -472,18 +396,16 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             .. macOS 10.2+
             .. versionadded:: 0.0.1 """
         err, config = Quartz.CGBeginDisplayConfiguration(None)
-        if err == self._kCGErrorSuccess:
-            Quartz.CGConfigureDisplayMirrorOfDisplay(config, self.display, Quartz.kCGNullDirectDisplay)
+        Quartz.CGConfigureDisplayMirrorOfDisplay(config, self.display, Quartz.kCGNullDirectDisplay)
 
-            options = (Quartz.kCGConfigureForSession & Quartz.kCGConfigureForAppOnly)
+        options = (Quartz.kCGConfigureForSession & Quartz.kCGConfigureForAppOnly)
 
-            self.status = Quartz.CGCompleteDisplayConfiguration(config, options)
-            if self.status == self._kCGErrorSuccess:
-                return kCGErrorTypes(self._kCGErrorSuccess)
-            elif self.status == self._kCGErrorIllegalArgument:
-                return None
-            return kCGErrorTypes(self.status)
-        return None
+        self.status = Quartz.CGCompleteDisplayConfiguration(config, options)
+        if self.status == self._kCGErrorSuccess:
+            return self._kCGErrorSuccess
+        elif self.status == self._kCGErrorIllegalArgument:
+            return None
+        return self.status
 
     def _getGamma(self) -> _kCGErrorSuccess:
         """
@@ -508,7 +430,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             return disp_trans
         if self.status == self._kCGErrorIllegalArgument:
             return None
-        return kCGErrorTypes(self.status)
+        return self.status
 
     def _setGamma(self, red, blue, green) -> _kCGErrorSuccess:
         """
@@ -518,7 +440,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             .. versionadded:: 0.0.3
         """
         if red == blue == green:
-            return kCGErrorTypes(self._kCGErrorIllegalArgument)
+            return self._kCGErrorIllegalArgument
             # if all gamuts are equal, it means that the RGB gamma of the display will not change.
 
         self.status = Quartz.CGSetDisplayTransferByFormula(
@@ -530,11 +452,11 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         time.sleep(0.02)
         # make delay between executing function, it needs if function is called for a continuous times.
         if self.status == self._kCGErrorSuccess:
-            return kCGErrorTypes(self._kCGErrorSuccess)
+            return self._kCGErrorSuccess
 
         if self.status == self._kCGErrorRangeCheck:
             return None
-        return kCGErrorTypes(self.status)
+        return self.status
 
     def _modeRetain(self) -> _kCGErrorSuccess:
         """Retains a Core Graphics display mode.
@@ -570,9 +492,9 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             0,
             None
         )
-        if self.status == 1:
+        if self.status == self._kCGErrorSuccess:
             return mode
-        return kCGErrorTypes(self.status)
+        return self.status
 
     def _switchTrueTone(self)-> _kCGErrorSuccess:
         """
@@ -587,4 +509,4 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 self.status = client.setEnabled_((not client.enabled()))
                 new_status = client.enabled()
                 if new_status != old_status:
-                    return kCGErrorTypes(self._kCGErrorSuccess)
+                    return self._kCGErrorSuccess
