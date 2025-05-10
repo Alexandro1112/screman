@@ -67,5 +67,8 @@ class DisplayCallbackDelegate(_DisplayCallbackDelegate):
     def displayProperties(self):
         return self._displayProperties()
 
+    def displayBrightnessDictionary(self):
+        return self._displayBrightnessDictionary()
+
 del _DisplayCallbackDelegate
 __all__ = [DisplayCallbackDelegate, ]

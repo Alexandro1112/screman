@@ -20,3 +20,34 @@ class kCGErrorTypes(IOError):  # noqa
 
     def err(self):
         return err_to_exception(self.n)
+
+
+class DictionaryKeys:
+    def __repr__(self):
+        return f'<{DictionaryKeys.__name__} with {tuple(self.dictionary.keys())[:2]} ... {tuple(self.dictionary.keys())[:2]}>'
+    def __init__(self, d):
+        self.dictionary = d
+
+    def __getattr__(self, item):
+        return self.dictionary[item]
+
+
+class SelectedWindow:
+    """
+     A class representing a selected windows in the current user session.
+    This class encapsulates the information of a window retrieved from the macOS window session.
+    """
+    def __repr__(self):
+        return (f'<{SelectedWindow.__name__} with constants ' +
+                ';\n\t'.join(self.nsdict) + ';>')
+
+    def __init__(self, nsdict):
+        self.nsdict = nsdict
+        for key, value in nsdict.items():
+            setattr(self, key, value)  # set the available keys of data as
+                                       # attributes to reverted SelectedWindow class
+    def __getattr__(self, attr):
+        pass
+
+    def __getitem__(self, _index):
+        return self.nsdict[_index]

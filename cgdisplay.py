@@ -1,12 +1,15 @@
 import time
+from types import NoneType
 import Quartz.CoreGraphics
 import ctypes
 import abc
 import objc
 from typing_extensions import Iterable, Dict, SupportsInt
 from .mapping import c_keycode, keycode
-from .types import kCGErrorTypes, QErrorNoneAvailable
+from .types import kCGErrorTypes, QErrorNoneAvailable, DictionaryKeys, SelectedWindow
 from string import ascii_lowercase, digits, punctuation
+import subprocess
+import re
 
 
 class CGDisplayDelegate:
@@ -31,7 +34,7 @@ class CGDisplayDelegate:
              _moveTo(x, y): Abstract method to move the cursor to specified coordinates on the display.
            Must be implemented in subclasses.
 
-           ... _setDisplayMode(modeIndex): Abstract method to set the display mode based on the provided index.
+            _setDisplayMode(modeIndex): Abstract method to set the display mode based on the provided index.
            Must be implemented in subclasses.
 
              _setTransfer(): Abstract method to set the color transfer function for the display.
@@ -85,7 +88,7 @@ class CGDisplayDelegate:
     def __init__(self, display: Quartz.CGMainDisplayID() = 0) -> None:
         self.display = display or Quartz.CGMainDisplayID()  # define main display reference in abc class.
         self._mp_display = None
-        self.status: kCGErrorTypes = kCGErrorTypes(None)
+        self.status: kCGErrorTypes = kCGErrorTypes(NoneType)
 
         if not self._isDisplay():
             msg = f'Display {self.display} is not a valid display ID.'
@@ -176,6 +179,10 @@ class CGDisplayDelegate:
 
     @abc.abstractmethod
     def _displayProperties(self):
+        pass
+
+    @abc.abstractmethod
+    def _displayBrightnessDictionary(self):
         pass
 
 
@@ -269,26 +276,6 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             ..macOS 10.5+
             ..versionadded: 0.0.7
         """
-        class SelectedWindow:
-            """
-             A class representing a selected windows in the current user session.
-            This class encapsulates the information of a window retrieved from the macOS window session.
-            """
-            def __repr__(self):
-                return (f'<{SelectedWindow.__name__} with index {index} and with constants ' +
-                        ';\n\t'.join(self.nsdict) + ';>')
-
-            def __init__(self, nsdict):
-                self.nsdict = nsdict
-                for key, value in nsdict.items():
-                    setattr(self, key, value)  # set the available keys of data as
-                                               # attributes to reverted SelectedWindow class
-            def __getattr__(self, attr):
-                pass
-
-            def __getitem__(self, _index):
-                return self.nsdict[_index]
-
         options = (Quartz.kCGWindowListOptionIncludingWindow & Quartz.kCGWindowListExcludeDesktopElements)
         self._openedWindows = Quartz.CGWindowListCopyWindowInfo(
             options, Quartz.kCGNullWindowID
@@ -589,3 +576,34 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 new_status = client.enabled()
                 if new_status != old_status:
                     return kCGErrorTypes(self._kCGErrorSuccess)
+
+    def _displayBrightnessDictionary(self):
+        """Return dictionary about brightness and colors settings of display.
+        ..versionadded:: 0.0.7"""
+        runner = subprocess.Popen(
+            ['/usr/libexec/corebrightnessdiag', 'status-info'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False
+        )
+        xml, err = runner.communicate()
+        dictionary = {}
+        if not err:
+            keys = re.findall(r'<key>.*</key>', xml.decode('utf-8'))
+            for tags in keys:
+                keys = tags.replace('<key>', '').replace('</key>', '')
+                result = subprocess.getoutput(f'/usr/libexec/corebrightnessdiag status-info | grep "{keys}"').split('\n')
+
+                for line in result:
+                    lines = line.strip().split()
+                    if len(lines) >= 3:  # if block contain "key = value"
+                        strings = ' '.join(lines).split()
+
+                        if len(strings) > 2:
+                            if (digits not in strings[0]) and (punctuation not in strings[2]) and not (strings[0].startswith('<')):
+                                dictionary[strings[0]] = re.sub(r'([^\w])', '', strings[2])
+            for i in range(6):
+                del dictionary[str(i)]
+
+            return DictionaryKeys(dictionary)
+        raise NotImplementedError('command /usr/libexec/corebrightnessdiag not supporting on current device.')
