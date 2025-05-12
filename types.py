@@ -1,5 +1,11 @@
 # create exceptions and error classes
 from .helpers import err_to_exception
+import objc
+
+
+def __BBBB():
+    return objc.nil
+
 
 class QErrorNoneAvailable(NotImplementedError):
     pass
@@ -24,7 +30,8 @@ class kCGErrorTypes(IOError):  # noqa
 
 class DictionaryKeys:
     def __repr__(self):
-        return f'<{DictionaryKeys.__name__} with {tuple(self.dictionary.keys())[:2]} ... {tuple(self.dictionary.keys())[:2]}>'
+        keys = tuple(self.dictionary.keys())
+        return f'<{DictionaryKeys.__name__} with {keys[:2]} ... {keys[:2]}>'
     def __init__(self, d):
         self.dictionary = d
 

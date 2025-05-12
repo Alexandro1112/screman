@@ -4,8 +4,8 @@ from .cgdisplay import _DisplayCallbackDelegate, kCGErrorTypes
 
 
 class DisplayCallbackDelegate(_DisplayCallbackDelegate):
-    def __init__(self, display=Quartz.CGMainDisplayID()):
-        super().__init__(display)
+    def __init__(self, display=Quartz.CGMainDisplayID(), builtin=True):
+        super().__init__(display, builtin)
 
     def hideCursor(self):
         return self._hideCursor()
@@ -61,14 +61,21 @@ class DisplayCallbackDelegate(_DisplayCallbackDelegate):
     def switchTrueTone(self):
         return self._switchTrueTone()
 
-    def getWindowsOnDisplay(self, index=None):
-        return self._getWindowsOnDisplay(index)
+    def getWindowsOnDisplay(self, w_number=None):
+        return self._getWindowsOnDisplay(w_number)
 
     def displayProperties(self):
         return self._displayProperties()
 
-    def displayBrightnessDictionary(self):
-        return self._displayBrightnessDictionary()
+    def displayColorSetting(self):
+        return self._displayColorSetting()
+
+    def isActiveNow(self):
+        return self._isActiveNow()
+
+    def getDisplayBrightness(self):
+        return self._getDisplayBrightness()
+
 
 del _DisplayCallbackDelegate
 __all__ = [DisplayCallbackDelegate, ]

@@ -1,7 +1,5 @@
 import Quartz
 
-
-
 def err_to_exception(err):
     query_exceptions = {
          0: '_kCGErrorSuccess',

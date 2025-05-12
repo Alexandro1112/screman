@@ -60,7 +60,7 @@ class CGDisplayDelegate:
            _setMirror(): Abstract method to enable or disable display mirroring.
            Must be implemented in subclasses.
 
-           _getWindowsOnDisplay(index): Abstract method to retrieve windows currently displayed on the specified index.
+           _getWindowsOnDisplay(w_number): Abstract method to retrieve windows currently displayed on the specified index.
             Must be implemented in subclasses.
 
            _getGamma(): Abstract method to get the current gamma settings of the display.
@@ -84,15 +84,26 @@ class CGDisplayDelegate:
            _displayProperties(): Abstract method to retrieve properties of the display,
            as supported display function. Must be implemented in subclasses.
 
+            _displayColorSetting(): Abstract method that return and contain display color statistic and values.
+            Must be implemented in subclasses.
+
+            _isActive(): Abstract method to check if display is active. Must be implemented in subclasses.
+
+            _getDisplayBrightness(): Abstract method to get the current brightness of the display.
+            Must be implemented in subclasses.
        """
-    def __init__(self, display: Quartz.CGMainDisplayID() = 0) -> None:
+    def __init__(self, display: Quartz.CGMainDisplayID() = 0, builtin=True) -> None:
         self.display = display or Quartz.CGMainDisplayID()  # define main display reference in abc class.
         self._mp_display = None
         self.status: kCGErrorTypes = kCGErrorTypes(NoneType)
 
-        if not self._isDisplay():
+        if not self._isDisplay() or self.display < 0:
             msg = f'Display {self.display} is not a valid display ID.'
             raise IndexError(msg)
+
+        if builtin != Quartz.CGDisplayIsBuiltin(self.display):
+            msg = 'Passed display ID is not a builtin display.'
+            raise ValueError(msg)
 
 
     def __abs__(self):
@@ -182,9 +193,16 @@ class CGDisplayDelegate:
         pass
 
     @abc.abstractmethod
-    def _displayBrightnessDictionary(self):
+    def _displayColorSetting(self):
         pass
 
+    @abc.abstractmethod
+    def _isActiveNow(self):
+        pass
+
+    @abc.abstractmethod
+    def _getDisplayBrightness(self):
+        pass
 
 class _DisplayCallbackDelegate(CGDisplayDelegate):
 
@@ -195,7 +213,6 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             Don't run something function which can change system setting in infinite loops. It can crush your device.
 
     """
-
     _kCGErrorSuccess: kCGErrorTypes | SupportsInt = 0
     _kCGErrorFailure: kCGErrorTypes | SupportsInt = 1000
     _kCGErrorIllegalArgument: kCGErrorTypes | SupportsInt = 1001
@@ -240,8 +257,21 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             bundle_path=objc.pathForFramework('/System/Library/PrivateFrameworks/CoreBrightness.framework'),
             module_globals=globals(),
         )
+        _DisplayServices = ctypes.CDLL('/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices')
 
-        return globals()
+        _DisplayServices.DisplayServicesSetBrightness.argtypes = [ctypes.c_int, ctypes.c_float]
+        _DisplayServices.DisplayServicesGetBrightness.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
+        _DisplayServices.DisplayServicesGetBrightness.restype = ctypes.c_int
+
+        return [globals(), _DisplayServices]
+
+    def _isActiveNow(self) -> _kCGErrorSuccess:
+        """
+        Returns a Boolean value indicating whether a display is active.
+        Mac Catalyst 13.1+
+        macOS 10.2+
+        """
+        return Quartz.CGDisplayIsActive(self.display)
 
     def _pressKey(self, key: Iterable | str) -> _kCGErrorSuccess:
         """Synthesizes a low-level keyboard event on the local machine.
@@ -269,7 +299,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             return kCGErrorTypes(self.status)
         return kCGErrorTypes(self._kCGErrorIllegalArgument)
 
-    def _getWindowsOnDisplay(self, index=None):
+    def _getWindowsOnDisplay(self, w_number=None) -> _kCGErrorSuccess:
         """
         Generates and returns information about the selected windows in the current user session.
             ..Mac Catalyst 13.1+
@@ -280,9 +310,9 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         self._openedWindows = Quartz.CGWindowListCopyWindowInfo(
             options, Quartz.kCGNullWindowID
         )
-        if index is None:
+        if w_number is None:
             return self._openedWindows
-        return SelectedWindow(self._openedWindows[index])
+        return SelectedWindow(self._openedWindows[w_number])
 
     def _hideCursor(self) -> _kCGErrorSuccess:
         """ Hides the mouse cursor, and increments the hide cursor count.
@@ -307,7 +337,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         _globalPoint = Quartz.CGPointMake(x, y)
 
         if x >= w or y >= h:
-            return self._kCGErrorIllegalArgument
+            return kCGErrorTypes(self._kCGErrorIllegalArgument)
         self.status = Quartz.CGDisplayMoveCursorToPoint(
             self.display,
             _globalPoint
@@ -322,15 +352,15 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             .. versionadded:: 0.0.1
             .. versionupdate:: 0.0.3
             """
-        _isLoadMp = self._load()
+        _isLoadMp = self._load()[0]
         if _isLoadMp:
             display = _isLoadMp['MPDisplay'].alloc().initWithCGSDisplayID_(self.display)
             modes = display.allModes()
             if modeIndex <= 0 or modeIndex > len(modes):
-                return self._kCGErrorIllegalArgument
+                return kCGErrorTypes(self._kCGErrorIllegalArgument)
 
-            _mode = modes[modeIndex]
-            self.status = display.setMode_(_mode)
+            mode = modes[modeIndex]
+            self.status = display.setMode_(mode)
 
             if self.status == self._kCGErrorSuccess:
                 return kCGErrorTypes(self._kCGErrorSuccess)
@@ -388,7 +418,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         """Rotate display at determine angle multiple to 90.
             .. versionadded:: 0.0.1
         """
-        _isLoadMp = self._load()
+        _isLoadMp = self._load()[0]
 
         if _isLoadMp:
             self._mp_display = _isLoadMp['MPDisplay'].alloc().initWithCGSDisplayID_(self.display)
@@ -401,14 +431,11 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                     return kCGErrorTypes(self._kCGErrorIllegalArgument)
                 return kCGErrorTypes(self.status)  # real unknown status
             return None
-        raise QErrorNoneAvailable(
-            'MonitorPanel framework failed to loading'
-        )
 
     def _defaultMode(self) -> _kCGErrorSuccess:
         """Create desc with summary values of init display.
             .. versionadded:: 0.0.1 """
-        _isLoadMp = self._load()
+        _isLoadMp = self._load()[0]
 
         if _isLoadMp:
             self._mp_display = _isLoadMp['MPDisplay'].alloc().initWithCGSDisplayID_(self.display)
@@ -420,13 +447,11 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         """regulating brightness of screen to value
             .. versionadded:: 0.0.1
         """
-        _controller = Quartz.IKMonitorBrightnessController.alloc().init()
-        try:
-            self.status = _controller.setBrightnessOnAllDisplays_(value)
-        except ValueError:
-            return kCGErrorTypes(self._kCGErrorIllegalArgument)
-        finally:
+        _dsServ = self._load()[-1]
+        status = _dsServ.DisplayServicesSetBrightness(self.display, ctypes.c_float(value))
+        if status == self._kCGErrorSuccess:
             return kCGErrorTypes(self._kCGErrorSuccess)
+        return kCGErrorTypes(self.status)
 
     def _displayRotation(self) -> _kCGErrorSuccess:
         """
@@ -567,7 +592,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
         switch display TrueTone mode to other status.
         ..versionadded:: 0.0.5
         """
-        _isLoadCb = self._load()
+        _isLoadCb = self._load()[0]
         if _isLoadCb:
             client = _isLoadCb['CBTrueToneClient'].alloc().init()
             old_status = client.enabled()
@@ -577,14 +602,15 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 if new_status != old_status:
                     return kCGErrorTypes(self._kCGErrorSuccess)
 
-    def _displayBrightnessDictionary(self):
-        """Return dictionary about brightness and colors settings of display.
+    def _displayColorSetting(self) -> DictionaryKeys | Dict:
+        """Return dictionary about colors settings of display.
         ..versionadded:: 0.0.7"""
         runner = subprocess.Popen(
             ['/usr/libexec/corebrightnessdiag', 'status-info'],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            shell=False
+            shell=False,
+            restore_signals=False
         )
         xml, err = runner.communicate()
         dictionary = {}
@@ -595,15 +621,21 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 result = subprocess.getoutput(f'/usr/libexec/corebrightnessdiag status-info | grep "{keys}"').split('\n')
 
                 for line in result:
-                    lines = line.strip().split()
-                    if len(lines) >= 3:  # if block contain "key = value"
-                        strings = ' '.join(lines).split()
-
-                        if len(strings) > 2:
-                            if (digits not in strings[0]) and (punctuation not in strings[2]) and not (strings[0].startswith('<')):
-                                dictionary[strings[0]] = re.sub(r'([^\w])', '', strings[2])
-            for i in range(6):
-                del dictionary[str(i)]
-
+                    strings = line.strip().split()
+                    if len(strings) >= 3:  # if block contain "key = value"
+                        if ((digits not in strings[0] and punctuation not in strings[2])
+                                and not strings[0].startswith('<') and len(strings[0]) > 1):
+                            dictionary[strings[0]] = re.sub(r'([^\w.])', '', strings[2])
+        for k in dictionary.keys():
+            if not dictionary[k]:
+                del k
             return DictionaryKeys(dictionary)
-        raise NotImplementedError('command /usr/libexec/corebrightnessdiag not supporting on current device.')
+        raise QErrorNoneAvailable('command /usr/libexec/corebrightnessdiag not supporting on current device.')
+
+    def _getDisplayBrightness(self) -> [SupportsInt, _kCGErrorSuccess]:
+        """return level of brightness of display.
+        ::versionadded:: 0.0.8"""
+        _ds_serv = self._load()[-1]
+        get = ctypes.c_float()
+        self.status = _ds_serv.DisplayServicesGetBrightness(self.display, ctypes.byref(get))
+        return [kCGErrorTypes(self.status), round(get.value, 2)]
