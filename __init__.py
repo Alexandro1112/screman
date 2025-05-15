@@ -1,7 +1,7 @@
-
 import Quartz
 from .cgdisplay import _DisplayCallbackDelegate, kCGErrorTypes
-
+from .cgdisplaystream import DisplayStreamDelegate
+from .helpers import getbounds, createbounds
 
 class DisplayCallbackDelegate(_DisplayCallbackDelegate):
     def __init__(self, display=Quartz.CGMainDisplayID(), builtin=True):
@@ -19,8 +19,8 @@ class DisplayCallbackDelegate(_DisplayCallbackDelegate):
     def setDisplayMode(self, modeIndex):
         return self._setDisplayMode(modeIndex)
 
-    def setTransfer(self):
-        return self._setTransfer()
+    def setTransfer(self, tableNum):
+        return self._setTransfer(tableNum)
 
     def setPalette(self):
         return self._setPalette()
@@ -78,4 +78,4 @@ class DisplayCallbackDelegate(_DisplayCallbackDelegate):
 
 
 del _DisplayCallbackDelegate
-__all__ = [DisplayCallbackDelegate, ]
+__all__ = [DisplayCallbackDelegate, DisplayStreamDelegate, getbounds, createbounds]

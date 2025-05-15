@@ -4,7 +4,7 @@ import Quartz.CoreGraphics
 import ctypes
 import abc
 import objc
-from typing_extensions import Iterable, Dict, SupportsInt
+from typing_extensions import Iterable, SupportsInt
 from .mapping import c_keycode, keycode
 from .types import kCGErrorTypes, QErrorNoneAvailable, DictionaryKeys, SelectedWindow
 from string import ascii_lowercase, digits, punctuation
@@ -95,6 +95,7 @@ class CGDisplayDelegate:
     def __init__(self, display: Quartz.CGMainDisplayID() = 0, builtin=True) -> None:
         self.display = display or Quartz.CGMainDisplayID()  # define main display reference in abc class.
         self._mp_display = None
+        self._builtin = builtin
         self.status: kCGErrorTypes = kCGErrorTypes(NoneType)
 
         if not self._isDisplay() or self.display < 0:
@@ -129,7 +130,7 @@ class CGDisplayDelegate:
         pass
 
     @abc.abstractmethod
-    def _setTransfer(self):
+    def _setTransfer(self, tableNum):
         pass
 
     @abc.abstractmethod
@@ -230,13 +231,17 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
     def __lt__(self, other):
         return self.display >= 0
 
-    def __is_exist(self):
-        return self._isDisplay()
-
     def __repr__(self):
-        return '<' + _DisplayCallbackDelegate.__name__.__repr__() + f' with display at {repr(self.display)} index>'
+        return ('<' + _DisplayCallbackDelegate.__name__.__repr__()
+                + f' with {"builtin" if self._builtin else "not builtin"} display at {repr(self.display)} index>')
 
-    def _displayProperties(self) -> Dict:
+    @property
+    def builtin(self):
+        return self._builtin
+
+    def _displayProperties(self) -> DictionaryKeys:
+        """return list of properties with status True of False.
+        ::versionadded: 0.0.8"""
         disp_properties = {}
         _isLoadMp = self._load()
         if _isLoadMp:
@@ -244,9 +249,10 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             for attrs in dir(display):
                 if attrs.startswith('is') and not attrs.endswith('_'):
                     disp_properties[attrs] = eval(f'display.{attrs}()')
-            return disp_properties
+            return DictionaryKeys(disp_properties)
 
     def _load(self):
+        """Load frameworks that used and distributed in methods"""
         objc.loadBundle(
             'MonitorPanel',
             bundle_path=objc.pathForFramework('/System/Library/PrivateFrameworks/MonitorPanel.framework'),
@@ -257,13 +263,14 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             bundle_path=objc.pathForFramework('/System/Library/PrivateFrameworks/CoreBrightness.framework'),
             module_globals=globals(),
         )
-        _DisplayServices = ctypes.CDLL('/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices')
+        displayservices = ctypes.CDLL('/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices')
 
-        _DisplayServices.DisplayServicesSetBrightness.argtypes = [ctypes.c_int, ctypes.c_float]
-        _DisplayServices.DisplayServicesGetBrightness.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
-        _DisplayServices.DisplayServicesGetBrightness.restype = ctypes.c_int
+        displayservices.DisplayServicesSetBrightness.argtypes = [ctypes.c_int32, ctypes.c_float]
+        displayservices.DisplayServicesGetBrightness.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
+        #create pointer to float type for return values in functions
+        displayservices.DisplayServicesGetBrightness.restype = ctypes.c_int
 
-        return [globals(), _DisplayServices]
+        return [globals(), displayservices]
 
     def _isActiveNow(self) -> _kCGErrorSuccess:
         """
@@ -279,8 +286,8 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             * Deprecated
             ..versionadded: 0.0.7
             """
-        key = key.capitalize()  # if key passed in lower register
-
+        if key.isupper():
+            key = key.capitalize()
         _hexKey = (keycode.get(key if key.startswith('kVK_ANSI') else 'kVK_ANSI_' + key, None)
             or c_keycode.get(key if key.startswith('kVK_') else 'kVK_' + key, None)
         )  # if passed name of key which isn't startswith from kVK_ANSI or kVK
@@ -366,7 +373,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 return kCGErrorTypes(self._kCGErrorSuccess)
             return kCGErrorTypes(self.status)
 
-    def _setTransfer(self) -> _kCGErrorSuccess:
+    def _setTransfer(self, tablesNum) -> _kCGErrorSuccess:
         """ Sets the byte values in the 8-bit RGB gamma tables for a display.
                 Mac Catalyst 13.1+
                 macOS 10.0+
@@ -380,14 +387,17 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
             # Create rgb range and pass for 3 last arguments color values
 
             for rgb in range(table_size):
-                red_table[rgb] = ctypes.c_ubyte(rgb * 3)
-                green_table[rgb] = ctypes.c_ubyte(rgb * 4)
-                blue_table[rgb] = ctypes.c_ubyte(rgb * 5)
+                value = rgb / 255.0
+                adjusted = ((value - 0.5) * 0.5) + 0.5
+                c_value = int(max(0.0, min(1.0, adjusted)) * 255)
+                red_table[rgb] =  c_value
+                green_table[rgb] = c_value
+                blue_table[rgb] = c_value
                 return red_table, green_table, blue_table
 
-        self.status = Quartz.CGSetDisplayTransferByByteTable(
+        self.status = Quartz.CGSetDisplayTransferByTable(
             self.display,
-            1,
+            tablesNum,
             *tables()
         )
         time.sleep(0.02)
@@ -443,7 +453,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 return self._mp_display.defaultMode()
             return kCGErrorTypes(self._kCGErrorNoneAvailable)
 
-    def _setDisplayBrightness(self, value) -> _kCGErrorSuccess:
+    def _setDisplayBrightness(self, value: float | int) -> _kCGErrorSuccess:
         """regulating brightness of screen to value
             .. versionadded:: 0.0.1
         """
@@ -602,7 +612,7 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
                 if new_status != old_status:
                     return kCGErrorTypes(self._kCGErrorSuccess)
 
-    def _displayColorSetting(self) -> DictionaryKeys | Dict:
+    def _displayColorSetting(self) -> DictionaryKeys:
         """Return dictionary about colors settings of display.
         ..versionadded:: 0.0.7"""
         runner = subprocess.Popen(
@@ -634,8 +644,8 @@ class _DisplayCallbackDelegate(CGDisplayDelegate):
 
     def _getDisplayBrightness(self) -> [SupportsInt, _kCGErrorSuccess]:
         """return level of brightness of display.
-        ::versionadded:: 0.0.8"""
+            ::versionadded:: 0.0.8"""
         _ds_serv = self._load()[-1]
-        get = ctypes.c_float()
-        self.status = _ds_serv.DisplayServicesGetBrightness(self.display, ctypes.byref(get))
-        return [kCGErrorTypes(self.status), round(get.value, 2)]
+        pointer_fl = ctypes.c_float()
+        self.status = _ds_serv.DisplayServicesGetBrightness(self.display, ctypes.byref(pointer_fl))
+        return round(pointer_fl.value, 2)

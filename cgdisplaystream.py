@@ -7,7 +7,7 @@ from typing_extensions import SupportsInt
 from IOSurface import IOSurfaceRef
 
 
-class CGDisplayStreamDelegate:
+class DisplayStreamDelegate:
     """.
         ...CGDisplayStreamDelegate class is designed to facilitate the capture of images from a specified display
      on macOS using the Core Graphics framework. This class manages the configuration and operation of a
@@ -29,11 +29,11 @@ class CGDisplayStreamDelegate:
         _, displays, _ = Quartz.CGGetActiveDisplayList(30, None, None)
 
         if display not in displays:
-            msg = f'Display with index {display} does not found, code: {self._kCGErrorIllegalArgument}'
+            msg = f'Display with index {display} does not found, code: {kCGErrorTypes(self._kCGErrorIllegalArgument).err()}'
             raise IndexError(msg)
 
         if pixel_format not in _pixelFormats:
-            msg = f'Pixel format {pixel_format} is not supported, code: {self._kCGErrorIllegalArgument}'
+            msg = f'Pixel format {pixel_format} is not supported, code: {kCGErrorTypes(self._kCGErrorIllegalArgument).err()}'
             raise ValueError(msg)
 
 
@@ -73,6 +73,7 @@ class CGDisplayStreamDelegate:
         while True:
             time.sleep(1)
             break
+
 
 
 

@@ -1,10 +1,5 @@
 # create exceptions and error classes
 from .helpers import err_to_exception
-import objc
-
-
-def __BBBB():
-    return objc.nil
 
 
 class QErrorNoneAvailable(NotImplementedError):
@@ -24,14 +19,14 @@ class kCGErrorTypes(IOError):  # noqa
         self.n = n
         pass
 
+    def __repr__(self):
+        return self.n
+
     def err(self):
         return err_to_exception(self.n)
 
 
 class DictionaryKeys:
-    def __repr__(self):
-        keys = tuple(self.dictionary.keys())
-        return f'<{DictionaryKeys.__name__} with {keys[:2]} ... {keys[:2]}>'
     def __init__(self, d):
         self.dictionary = d
 
